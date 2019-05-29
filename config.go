@@ -208,9 +208,11 @@ func parse(cmdline []string) (parameters, error) {
 		if jsonDecoder, err = openFile(*workload); err != nil {
 			return parameters{}, fmt.Errorf("Error opening workload file: %s", err)
 		}
+/*
 		if len(endpoints) != 1 {
 			return parameters{}, errors.New("Cannot specify a workload file and additional endpoints. Only one of these is supported at a time")
 		}
+*/
 	}
 
 	if (*concurrency)%len(endpoints) != 0 {
