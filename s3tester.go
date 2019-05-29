@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"runtime/pprof"
 	"strconv"
 	"strings"
@@ -250,7 +251,7 @@ func ReceiveS3Op(svc *s3.S3, httpClient *http.Client, args *parameters, duration
 		if op.Event == "updatemeta" {
 			args.metadata = metadataValue(int(op.Size))
 		}
-		sendRequest(svc, httpClient, op.Event, op.Key, args, r, limiter)
+		sendRequest(svc, httpClient, op.Event, op.Bucket, op.Key, args, r, limiter)
 		if durationLimit.enabled() {
 			return
 		}
@@ -258,16 +259,16 @@ func ReceiveS3Op(svc *s3.S3, httpClient *http.Client, args *parameters, duration
 	workersChan.wg.Done()
 }
 
-func sendRequest(svc *s3.S3, httpClient *http.Client, optype string, keyName string, args *parameters, r *result, limiter *rate.Limiter) {
+func sendRequest(svc *s3.S3, httpClient *http.Client, optype string, bucketName string, keyName string, args *parameters, r *result, limiter *rate.Limiter) {
 	r.Count++
 	start := time.Now()
-	err := DispatchOperation(svc, httpClient, optype, keyName, args, r, int64(args.nrequests.value))
+	err := DispatchOperation(svc, httpClient, optype, bucketName, keyName, args, r, int64(args.nrequests.value))
 	elapsed := time.Since(start)
 	r.RecordLatency(elapsed)
 
 	if err != nil {
 		r.Failcount++
-		log.Printf("Failed %s on object '%s/%s': %v", args.optype, args.bucketname, keyName, err)
+		log.Printf("Failed %s on object '%s/%s': %v", optype, bucketName, keyName, err)
 	}
 	r.elapsedSum += elapsed
 
@@ -306,7 +307,30 @@ func worker(results chan<- result, args parameters, credentials *credentials.Cre
 		if args.duration.set && args.optype != "get" {
 			maxRequestsPerWorker = math.MaxInt64 / int64(args.concurrency)
 		}
+
+		// In case of mixedOperations, create 100 item array with ordered operations
+		re := regexp.MustCompile(`([a-z]+)([1-9]\d?)`)
+		var operations = re.FindAllStringSubmatch(args.optype, -1)
+		var mixedOperations []string
+		for i := 0; i < len(operations); i++ {
+			var op = operations[i][1]
+			ratio, _ := strconv.Atoi(operations[i][2])
+			for j := 0; j < ratio; j++ {
+				mixedOperations = append(mixedOperations, op)
+			}
+		}
+
 		for j := int64(0); j < maxRequestsPerWorker; j++ {
+			var bucketName string
+			switch args.overwriteBucket {
+			case 1:
+				bucketName = args.bucketname + "-" + strconv.FormatInt(int64(id), 10)
+			case 2:
+				bucketName = args.bucketname + "-" + strconv.FormatInt(int64(id)*maxRequestsPerWorker+j, 10)
+			default:
+				bucketName = args.bucketname
+			}
+
 			var keyName string
 			switch args.overwrite {
 			case 1:
@@ -315,6 +339,12 @@ func worker(results chan<- result, args parameters, credentials *credentials.Cre
 				keyName = args.objectprefix + "-" + strconv.FormatInt(j, 10)
 			default:
 				keyName = args.objectprefix + "-" + strconv.FormatInt(int64(id)*maxRequestsPerWorker+j, 10)
+			}
+
+			// Set op in case of mixedOperations
+			var opType = args.optype
+			if len(mixedOperations) > 0 {
+				opType = mixedOperations[j % 100]
 			}
 
 			r.incrementUniqObjNumCount(args.duration.set)
@@ -327,7 +357,7 @@ func worker(results chan<- result, args parameters, credentials *credentials.Cre
 					args.osize = newSize
 				}
 
-				sendRequest(svc, httpClient, args.optype, keyName, &args, &r, limiter)
+				sendRequest(svc, httpClient, opType, bucketName, keyName, &args, &r, limiter)
 
 				if durationLimit.enabled() {
 					results <- r

@@ -328,7 +328,7 @@ func RestoreObject(svc s3iface.S3API, bucket string, key string, tier string, da
 	return err
 }
 
-func DispatchOperation(svc s3iface.S3API, hclient *http.Client, op, keyName string, args *parameters, r *result, randMax int64) error {
+func DispatchOperation(svc s3iface.S3API, hclient *http.Client, op, bucketName string, keyName string, args *parameters, r *result, randMax int64) error {
 	var err error
 
 	sc := s3.StorageClassStandard
@@ -342,26 +342,26 @@ func DispatchOperation(svc s3iface.S3API, hclient *http.Client, op, keyName stri
 			r.Failcount++
 		}
 	case "put":
-		if err = Put(svc, args.bucketname, keyName, args.tagging, sc, args.osize, parseMetadataString(args.metadata)); err == nil {
+		if err = Put(svc, bucketName, keyName, args.tagging, sc, args.osize, parseMetadataString(args.metadata)); err == nil {
 			r.sumObjSize += args.osize
 		}
 	case "puttagging":
-		err = PutTagging(svc, args.bucketname, keyName, args.tagging)
+		err = PutTagging(svc, bucketName, keyName, args.tagging)
 	case "updatemeta":
-		err = UpdateMetadata(svc, args.bucketname, keyName, parseMetadataString(args.metadata))
+		err = UpdateMetadata(svc, bucketName, keyName, parseMetadataString(args.metadata))
 	case "multipartput":
-		if err = MultipartPut(svc, args.bucketname, keyName, sc, args.osize, args.partsize, parseMetadataString(args.metadata)); err == nil {
+		if err = MultipartPut(svc, bucketName, keyName, sc, args.osize, args.partsize, parseMetadataString(args.metadata)); err == nil {
 			r.sumObjSize += args.osize
 		}
 	case "get":
 		var retrievedBytes int64
-		if retrievedBytes, err = Get(svc, args.bucketname, keyName, args.objrange, args.verify, args.partsize); err == nil {
+		if retrievedBytes, err = Get(svc, bucketName, keyName, args.objrange, args.verify, args.partsize); err == nil {
 			r.sumObjSize += retrievedBytes
 		}
 	case "head":
-		err = Head(svc, args.bucketname, keyName)
+		err = Head(svc, bucketName, keyName)
 	case "delete":
-		err = Delete(svc, args.bucketname, keyName)
+		err = Delete(svc, bucketName, keyName)
 	case "randget":
 		var objnum int64
 		if randMax <= 0 {
@@ -372,11 +372,11 @@ func DispatchOperation(svc s3iface.S3API, hclient *http.Client, op, keyName stri
 
 		key := args.objectprefix + "-" + strconv.FormatInt(objnum, 10)
 		var retrievedBytes int64
-		if retrievedBytes, err = Get(svc, args.bucketname, key, args.objrange, args.verify, args.partsize); err == nil {
+		if retrievedBytes, err = Get(svc, bucketName, key, args.objrange, args.verify, args.partsize); err == nil {
 			r.sumObjSize += retrievedBytes
 		}
 	case "restore":
-		err = RestoreObject(svc, args.bucketname, keyName, args.tier, args.days)
+		err = RestoreObject(svc, bucketName, keyName, args.tier, args.days)
 	}
 	return err
 }
