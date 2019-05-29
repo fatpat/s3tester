@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -125,14 +126,16 @@ func Replay(args *parameters, workload *workloadParams) {
 // Splits up each []s3op into single s3op and sends to approriate worker
 func splitS3ops(params *workloadParams, ops []s3op, endpoint string, region string) {
 	for _, op := range ops {
-		// add s3tester to bucket name so it is a distinct/fresh bucket
-		bucketReplay := op.Bucket + "s3tester"
-		if _, ok := params.bucketMap[bucketReplay]; !ok {
-			if err := createBucket(params.bucketMap, bucketReplay, endpoint, region, params.credentials); err != nil {
-				log.Fatalf("Unable to create bucket for replay %v", err)
+		workerNum := getHashKey(params.hashKeys, op.Bucket+op.Key, params.concurrency)
+//		op.Bucket = fmt.Sprintf("%s-%d", op.Bucket, workerNum)
+/*
+		if _, ok := params.bucketMap[op.Bucket]; !ok {
+			err := createBucket(params.bucketMap, op.Bucket, endpoint, region, params.credentials)
+			if err != nil {
+				log.Fatalf("Unable to create bucket %s for s3 workload %v", op.Bucket, err)
 			}
 		}
-		workerNum := getHashKey(params.hashKeys, op.Bucket+op.Key, params.concurrency)
+*/
 		params.workersChanSlice[workerNum].workChan <- op
 	}
 }
@@ -196,14 +199,16 @@ func generateRequests(args *parameters, ratios []opTrack, workload *workloadPara
 
 // Sends s3op to appropriate worker for mixedWorkload
 func sendS3op(op s3op, params *workloadParams, endpoint string, region string) {
-	bucketWorkload := op.Bucket + "s3tester"
-	if _, ok := params.bucketMap[bucketWorkload]; !ok {
-		err := createBucket(params.bucketMap, bucketWorkload, endpoint, region, params.credentials)
+	workerNum := getHashKey(params.hashKeys, op.Key+op.Bucket, params.concurrency)
+//	op.Bucket = fmt.Sprintf("%s-%d", op.Bucket, workerNum)
+/*
+	if _, ok := params.bucketMap[op.Bucket]; !ok {
+		err := createBucket(params.bucketMap, op.Bucket, endpoint, region, params.credentials)
 		if err != nil {
-			log.Fatalf("Unable to create bucket for s3 workload %v", err)
+			log.Fatalf("Unable to create bucket %s for s3 workload %v", op.Bucket, err)
 		}
 	}
-	workerNum := getHashKey(params.hashKeys, op.Key+op.Bucket, params.concurrency)
+*/
 	params.workersChanSlice[workerNum].workChan <- op
 }
 
